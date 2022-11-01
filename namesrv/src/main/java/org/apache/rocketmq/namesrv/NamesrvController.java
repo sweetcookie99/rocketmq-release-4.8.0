@@ -46,15 +46,21 @@ public class NamesrvController {
 
     private final NettyServerConfig nettyServerConfig;
 
+    //调度线程池  执行定时任务    1.检查存活brocker状态 2.打印状态
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl(
         "NSScheduledThread"));
+    //管理配置kv
     private final KVConfigManager kvConfigManager;
+    //管理路由信息的配置 重要
     private final RouteInfoManager routeInfoManager;
 
+    //网络层封装 重要
     private RemotingServer remotingServer;
 
+    //用于监听channel状态  当channel状态发生转变 close idle 会向 事件队列发起事件，事件最终由 该server处理
     private BrokerHousekeepingService brokerHousekeepingService;
 
+    //业务线程池 netty 线程 主要任务是解析报文， 将报文解析成RemotingCommand对象，然后将该对象交给业务线程处理
     private ExecutorService remotingExecutor;
 
     private Configuration configuration;
@@ -77,13 +83,17 @@ public class NamesrvController {
 
         this.kvConfigManager.load();
 
+        //创建网路服务器对象
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
+        //业务线程池 默认线程数8
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
+        //注册协议处理器
         this.registerProcessor();
 
+        //定时任务1：每10s中检查broker 存活状态 将idle状态的broker移除
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -92,6 +102,7 @@ public class NamesrvController {
             }
         }, 5, 10, TimeUnit.SECONDS);
 
+        //定时任务2：每10分钟执行 打印一遍kv配置
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -147,12 +158,14 @@ public class NamesrvController {
             this.remotingServer.registerDefaultProcessor(new ClusterTestRequestProcessor(this, namesrvConfig.getProductEnvName()),
                 this.remotingExecutor);
         } else {
-
+            //z注册个 缺省的协议处理器
+            //参数1：缺省处理器   线程2：处理器工作时使用的线程池
             this.remotingServer.registerDefaultProcessor(new DefaultRequestProcessor(this), this.remotingExecutor);
         }
     }
 
     public void start() throws Exception {
+        //服务器 网络层启动
         this.remotingServer.start();
 
         if (this.fileWatchService != null) {

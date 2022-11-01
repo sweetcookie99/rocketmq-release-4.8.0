@@ -48,13 +48,19 @@ public class NamesrvStartup {
     private static CommandLine commandLine = null;
 
     public static void main(String[] args) {
+        //命令行启动 设置参数会进入
         main0(args);
     }
 
     public static NamesrvController main0(String[] args) {
 
         try {
+            //控制器
+            //：初始化Namesrv 启动  关闭...
+            //读取配置信息
             NamesrvController controller = createNamesrvController(args);
+
+
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
@@ -73,24 +79,32 @@ public class NamesrvStartup {
         //PackageConflictDetect.detectFastjson();
 
         Options options = ServerUtil.buildCommandlineOptions(new Options());
+        //启动时的业务信息 由commandLine管理
         commandLine = ServerUtil.parseCmdLine("mqnamesrv", args, buildCommandlineOptions(options), new PosixParser());
         if (null == commandLine) {
             System.exit(-1);
             return null;
         }
 
+
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        //netty配置
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+        //nameser总监听端口
         nettyServerConfig.setListenPort(9876);
         if (commandLine.hasOption('c')) {
+            //读取 -c 选项值
             String file = commandLine.getOptionValue('c');
             if (file != null) {
+                //读取config文件数据 到properties中
                 InputStream in = new BufferedInputStream(new FileInputStream(file));
                 properties = new Properties();
                 properties.load(in);
+
+                //如果config配置文件 内的配置涉及到nameser
                 MixAll.properties2Object(properties, namesrvConfig);
                 MixAll.properties2Object(properties, nettyServerConfig);
-
+                //将读取的配置文件 保存 到字段
                 namesrvConfig.setConfigStorePath(file);
 
                 System.out.printf("load config properties file OK, %s%n", file);
@@ -105,6 +119,7 @@ public class NamesrvStartup {
             System.exit(0);
         }
 
+        //将启动时 命令行设置的kv 复写到namesercongfig中
         MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), namesrvConfig);
 
         if (null == namesrvConfig.getRocketmqHome()) {
@@ -112,6 +127,7 @@ public class NamesrvStartup {
             System.exit(-2);
         }
 
+        //创建日志对象
         LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(lc);
@@ -123,6 +139,9 @@ public class NamesrvStartup {
         MixAll.printObjectProperties(log, namesrvConfig);
         MixAll.printObjectProperties(log, nettyServerConfig);
 
+        //创建控制器
+        //1.nameserConfig 配置文件
+        //2.网络层配置 netty配置文件
         final NamesrvController controller = new NamesrvController(namesrvConfig, nettyServerConfig);
 
         // remember all configs to prevent discard
@@ -137,12 +156,15 @@ public class NamesrvStartup {
             throw new IllegalArgumentException("NamesrvController is null");
         }
 
+        //初始化
         boolean initResult = controller.initialize();
+
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
 
+        //JVM HOOK 平滑关机的逻辑，当jvm被关闭时，主动调用contorller.shutdown()方法，让服务器平滑关机
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
